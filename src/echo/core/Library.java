@@ -1,75 +1,76 @@
 package echo.core;
 
 import echo.models.Book;
-import echo.models.User;
-import echo.fines.FineStrategy;
-import echo.notify.NotificationService;
-import java.util.*;
+
+import java.sql.*;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 
 public class Library {
-    private Map<String, Book> booksByIsbn = new HashMap<>();
-    private Map<String, User> usersById = new HashMap<>();
-    private FineStrategy fineStrategy;
-    private NotificationService notifier;
-    private int borrowLimit = 3;
 
-    public Library(FineStrategy fineStrategy, NotificationService notifier){
-        this.fineStrategy = fineStrategy;
-        this.notifier = notifier;
+    public List<Book> getAllBooks() throws SQLException {
+        String sql = "SELECT * FROM books ORDER BY id";
+        try (Connection c = Database.getConnection();
+             PreparedStatement ps = c.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+
+            List<Book> list = new ArrayList<>();
+            while (rs.next()) {
+                list.add(mapRow(rs));
+            }
+            return list;
+        }
     }
 
-    public void addBook(Book b){
-        booksByIsbn.put(b.getIsbn(), b);
-    }
-
-    public Book findByIsbn(String isbn){
-        return booksByIsbn.get(isbn);
-    }
-
-    public List<Book> searchByTitle(String q){
-        List<Book> res = new ArrayList<>();
-        for(Book b : booksByIsbn.values()){
-            if(b.getTitle().toLowerCase().contains(q.toLowerCase())){
-                res.add(b);
+    public List<Book> searchBooks(String term) throws SQLException {
+        String sql = "SELECT * FROM books WHERE title LIKE ? OR author LIKE ? OR isbn LIKE ? ORDER BY id";
+        String like = "%" + term + "%";
+        try (Connection c = Database.getConnection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, like);
+            ps.setString(2, like);
+            ps.setString(3, like);
+            try (ResultSet rs = ps.executeQuery()) {
+                List<Book> list = new ArrayList<>();
+                while (rs.next()) list.add(mapRow(rs));
+                return list;
             }
         }
-        return res;
     }
 
-    public void addUser(User u){
-        usersById.put(u.getId(), u);
+    public boolean borrowBook(int bookId, String borrowerName, int days) throws SQLException {
+        String sql = "UPDATE books SET available = FALSE, borrower = ?, due_date = ? WHERE id = ? AND available = TRUE";
+        LocalDate due = LocalDate.now().plusDays(days);
+        try (Connection c = Database.getConnection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, borrowerName);
+            ps.setDate(2, Date.valueOf(due));
+            ps.setInt(3, bookId);
+            int updated = ps.executeUpdate();
+            return updated == 1;
+        }
     }
 
-    public String borrowBook(String userId, String isbn){
-        User u = usersById.get(userId);
-        if(u == null) return "User not found";
-        Book b = booksByIsbn.get(isbn);
-        if(b == null) return "Book not found";
-        if(b.isBorrowed()) return "Book already borrowed";
-        if(u.getBorrowed().size() >= borrowLimit) return "Borrow limit reached";
-
-        b.setBorrowed(true);
-        u.borrow(isbn);
-        notifier.notifyUser(userId, "You borrowed: " + b.getTitle());
-        return "Success";
+    public boolean returnBook(int bookId) throws SQLException {
+        String sql = "UPDATE books SET available = TRUE, borrower = NULL, due_date = NULL WHERE id = ? AND available = FALSE";
+        try (Connection c = Database.getConnection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setInt(1, bookId);
+            int updated = ps.executeUpdate();
+            return updated == 1;
+        }
     }
 
-    public String returnBook(String userId, String isbn, int daysKept){
-        User u = usersById.get(userId);
-        Book b = booksByIsbn.get(isbn);
-        if(u == null || b == null) return "User or Book not found";
-        if(!b.isBorrowed()) return "Book was not marked borrowed";
-
-        b.setBorrowed(false);
-        u.returned(isbn);
-        int overdue = Math.max(0, daysKept - 14); // 14-day borrow period
-        double fine = fineStrategy.calculateFine(overdue);
-        String msg = "Returned: " + b.getTitle() + ". Fine: " + fine;
-        notifier.notifyUser(userId, msg);
-        return msg;
-    }
-
-    public List<Book> listAll(){
-        return new ArrayList<>(booksByIsbn.values());
+    private Book mapRow(ResultSet rs) throws SQLException {
+        return new Book(
+                rs.getInt("id"),
+                rs.getString("title"),
+                rs.getString("author"),
+                rs.getString("isbn"),
+                rs.getBoolean("available"),
+                rs.getString("borrower"),
+                rs.getDate("due_date")
+        );
     }
 }

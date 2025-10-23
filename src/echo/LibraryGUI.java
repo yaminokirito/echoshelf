@@ -1,139 +1,164 @@
 package echo;
 
-import echo.models.Book;
-import echo.models.User;
-import echo.fines.FixedFineStrategy;
-import echo.notify.ConsoleNotificationService;
 import echo.core.Library;
+import echo.models.Book;
 
 import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
 import java.awt.*;
-import java.awt.event.*;
-import java.io.*;
+import java.sql.SQLException;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 public class LibraryGUI extends JFrame {
-    private Library library;
-    private JTextArea outputArea;
-    private JTextField searchField, userField, isbnField, daysField;
+    private final Library library = new Library();
+    private final DefaultTableModel tableModel;
+    private final JTable table;
+    private final JTextField searchField;
 
     public LibraryGUI() {
-        setTitle("EchoShelf - Library Management");
-        setSize(700, 500);
-        setDefaultCloseOperation(EXIT_ON_CLOSE);
+        super("EchoShelf - Library");
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setSize(800, 500);
         setLocationRelativeTo(null);
-        setLayout(new BorderLayout());
 
-        // Initialize library
-        library = new Library(new FixedFineStrategy(2.0), new ConsoleNotificationService());
-        loadBooks();
-        library.addUser(new User("u1", "Kavya"));
-        library.addUser(new User("u2", "Laya"));
-
-        // Top Panel: Search bar
-        JPanel top = new JPanel();
-        top.add(new JLabel("Search:"));
+        // Top controls
+        JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        JButton showAllBtn = new JButton("Show All Books");
+        JButton searchBtn = new JButton("Search");
         searchField = new JTextField(20);
-        JButton searchBtn = new JButton("Go");
-        searchBtn.addActionListener(e -> searchBooks());
+        JButton borrowBtn = new JButton("Borrow Book");
+        JButton returnBtn = new JButton("Return Book");
+
+        top.add(showAllBtn);
+        top.add(new JLabel("Search:"));
         top.add(searchField);
         top.add(searchBtn);
+        top.add(borrowBtn);
+        top.add(returnBtn);
 
-        // Center: Output area
-        outputArea = new JTextArea();
-        outputArea.setEditable(false);
-        JScrollPane scroll = new JScrollPane(outputArea);
-
-        // Bottom Panel: Actions
-        JPanel bottom = new JPanel(new GridLayout(2, 1));
-
-        JPanel borrowPanel = new JPanel();
-        borrowPanel.add(new JLabel("User ID:"));
-        userField = new JTextField(5);
-        borrowPanel.add(userField);
-        borrowPanel.add(new JLabel("ISBN:"));
-        isbnField = new JTextField(10);
-        borrowPanel.add(isbnField);
-        JButton borrowBtn = new JButton("Borrow");
-        borrowBtn.addActionListener(e -> borrowBook());
-        JButton returnBtn = new JButton("Return");
-        returnBtn.addActionListener(e -> returnBook());
-        borrowPanel.add(borrowBtn);
-        borrowPanel.add(returnBtn);
-
-        JPanel finePanel = new JPanel();
-        finePanel.add(new JLabel("Days Kept:"));
-        daysField = new JTextField(5);
-        finePanel.add(daysField);
-
-        bottom.add(borrowPanel);
-        bottom.add(finePanel);
+        // Table
+        String[] cols = {"ID", "Title", "Author", "ISBN", "Available", "Borrower", "Due Date"};
+        tableModel = new DefaultTableModel(cols, 0) {
+            public boolean isCellEditable(int r, int c) { return false; }
+        };
+        table = new JTable(tableModel);
+        JScrollPane scroll = new JScrollPane(table);
 
         add(top, BorderLayout.NORTH);
         add(scroll, BorderLayout.CENTER);
-        add(bottom, BorderLayout.SOUTH);
 
-        showAllBooks();
+        // Actions
+        showAllBtn.addActionListener(e -> loadAll());
+        searchBtn.addActionListener(e -> doSearch());
+        borrowBtn.addActionListener(e -> doBorrow());
+        returnBtn.addActionListener(e -> doReturn());
+
+        // initial load
+        loadAll();
     }
 
-    private void loadBooks() {
-        try (BufferedReader br = new BufferedReader(new FileReader("books.csv"))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                String[] parts = line.split(",");
-                if (parts.length >= 3) {
-                    library.addBook(new Book(parts[0].trim(), parts[1].trim(), parts[2].trim()));
-                }
-            }
-        } catch (IOException e) {
-            JOptionPane.showMessageDialog(this, "books.csv not found!", "Error", JOptionPane.ERROR_MESSAGE);
+    private void loadAll() {
+        try {
+            List<Book> books = library.getAllBooks();
+            refreshTable(books);
+        } catch (SQLException ex) {
+            showError(ex);
         }
     }
 
-    private void showAllBooks() {
-        outputArea.setText("--- All Books ---\n");
-        for (Book b : library.listAll()) {
-            outputArea.append(b.toString() + "\n");
-        }
-    }
-
-    private void searchBooks() {
+    private void doSearch() {
         String q = searchField.getText().trim();
-        outputArea.setText("--- Search Results for '" + q + "' ---\n");
-        List<Book> results = library.searchByTitle(q);
-        if (results.isEmpty()) {
-            outputArea.append("No books found.\n");
-        } else {
-            for (Book b : results) outputArea.append(b.toString() + "\n");
-        }
-    }
-
-    private void borrowBook() {
-        String userId = userField.getText().trim();
-        String isbn = isbnField.getText().trim();
-        if (userId.isEmpty() || isbn.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Enter both User ID and ISBN.");
+        if (q.isEmpty()) {
+            loadAll();
             return;
         }
-        String msg = library.borrowBook(userId, isbn);
-        outputArea.append("\n[Borrow Result] " + msg + "\n");
-        showAllBooks();
-    }
-
-    private void returnBook() {
-        String userId = userField.getText().trim();
-        String isbn = isbnField.getText().trim();
-        int daysKept = 14;
         try {
-            daysKept = Integer.parseInt(daysField.getText().trim());
-        } catch (Exception ignored) {}
-
-        String msg = library.returnBook(userId, isbn, daysKept);
-        outputArea.append("\n[Return Result] " + msg + "\n");
-        showAllBooks();
+            List<Book> books = library.searchBooks(q);
+            refreshTable(books);
+        } catch (SQLException ex) {
+            showError(ex);
+        }
     }
 
-    public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> new LibraryGUI().setVisible(true));
+    private void doBorrow() {
+        int row = table.getSelectedRow();
+        if (row == -1) {
+            JOptionPane.showMessageDialog(this, "Select a book row first.");
+            return;
+        }
+        int bookId = (int) tableModel.getValueAt(row, 0);
+        boolean available = Boolean.parseBoolean(tableModel.getValueAt(row, 4).toString());
+        if (!available) {
+            JOptionPane.showMessageDialog(this, "Book is already borrowed.");
+            return;
+        }
+        String borrower = JOptionPane.showInputDialog(this, "Borrower name:");
+        if (borrower == null || borrower.trim().isEmpty()) return;
+        String daysStr = JOptionPane.showInputDialog(this, "Days to borrow (default 14):", "14");
+        int days = 14;
+        try { days = Integer.parseInt(daysStr); } catch (Exception ignored) {}
+        try {
+            boolean ok = library.borrowBook(bookId, borrower.trim(), days);
+            if (ok) {
+                JOptionPane.showMessageDialog(this, "Book borrowed successfully.");
+                loadAll();
+            } else {
+                JOptionPane.showMessageDialog(this, "Could not borrow (maybe already borrowed).");
+                loadAll();
+            }
+        } catch (SQLException ex) {
+            showError(ex);
+        }
+    }
+
+    private void doReturn() {
+        int row = table.getSelectedRow();
+        if (row == -1) {
+            JOptionPane.showMessageDialog(this, "Select a book row first.");
+            return;
+        }
+        int bookId = (int) tableModel.getValueAt(row, 0);
+        boolean available = Boolean.parseBoolean(tableModel.getValueAt(row, 4).toString());
+        if (available) {
+            JOptionPane.showMessageDialog(this, "Book is not currently borrowed.");
+            return;
+        }
+        int confirm = JOptionPane.showConfirmDialog(this, "Return selected book?", "Confirm", JOptionPane.YES_NO_OPTION);
+        if (confirm != JOptionPane.YES_OPTION) return;
+        try {
+            boolean ok = library.returnBook(bookId);
+            if (ok) {
+                JOptionPane.showMessageDialog(this, "Book returned.");
+                loadAll();
+            } else {
+                JOptionPane.showMessageDialog(this, "Could not return book.");
+                loadAll();
+            }
+        } catch (SQLException ex) {
+            showError(ex);
+        }
+    }
+
+    private void refreshTable(List<Book> books) {
+        tableModel.setRowCount(0);
+        DateTimeFormatter fmt = DateTimeFormatter.ISO_LOCAL_DATE;
+        for (Book b : books) {
+            String due = b.getDueDate() == null ? "" : b.getDueDate().toLocalDate().format(fmt);
+            tableModel.addRow(new Object[]{
+                    b.getId(),
+                    b.getTitle(),
+                    b.getAuthor(),
+                    b.getIsbn(),
+                    b.isAvailable(),
+                    b.getBorrower() == null ? "" : b.getBorrower(),
+                    due
+            });
+        }
+    }
+
+    private void showError(Exception ex) {
+        ex.printStackTrace();
+        JOptionPane.showMessageDialog(this, "Error: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
     }
 }

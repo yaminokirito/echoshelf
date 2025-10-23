@@ -4,7 +4,9 @@ public class FixedFineStrategy implements FineStrategy {
     private double perDay;
 
     public FixedFineStrategy(double perDay){
+        this.perDay = 5 ;
         this.perDay = perDay;
+        
     }
 
     @Override

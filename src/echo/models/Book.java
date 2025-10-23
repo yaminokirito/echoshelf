@@ -1,26 +1,31 @@
 package echo.models;
 
+import java.sql.Date;
+
 public class Book {
-    private String isbn;
+    private int id;
     private String title;
     private String author;
-    private boolean borrowed;
+    private String isbn;
+    private boolean available;
+    private String borrower;
+    private Date dueDate;
 
-    public Book(String isbn, String title, String author){
-        this.isbn = isbn;
+    public Book(int id, String title, String author, String isbn, boolean available, String borrower, Date dueDate) {
+        this.id = id;
         this.title = title;
         this.author = author;
-        this.borrowed = false;
+        this.isbn = isbn;
+        this.available = available;
+        this.borrower = borrower;
+        this.dueDate = dueDate;
     }
 
-    public String getIsbn(){ return isbn; }
-    public String getTitle(){ return title; }
-    public String getAuthor(){ return author; }
-    public boolean isBorrowed(){ return borrowed; }
-    public void setBorrowed(boolean b){ this.borrowed = b; }
-
-    @Override
-    public String toString(){
-        return String.format("%s | %s | %s | borrowed=%s", isbn, title, author, borrowed);
-    }
+    public int getId() { return id; }
+    public String getTitle() { return title; }
+    public String getAuthor() { return author; }
+    public String getIsbn() { return isbn; }
+    public boolean isAvailable() { return available; }
+    public String getBorrower() { return borrower; }
+    public Date getDueDate() { return dueDate; }
 }
